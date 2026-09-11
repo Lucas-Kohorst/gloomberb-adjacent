@@ -1,0 +1,26 @@
+{
+  "name": "gloomberb-adjacent",
+  "version": "0.1.0",
+  "description": "Adjacent prediction-market indices and reference rates for Gloomberb.",
+  "license": "MIT",
+  "type": "module",
+  "main": "index.ts",
+  "exports": {
+    ".": "./index.ts"
+  },
+  "keywords": [
+    "gloomberb",
+    "gloomberb-plugin",
+    "gloom-plugin",
+    "adjacent",
+    "prediction-markets"
+  ],
+  "peerDependencies": {
+    "gloomberb": ">=0.13.3",
+    "react": "*"
+  },
+  "peerDependenciesMeta": {
+    "gloomberb": { "optional": true },
+    "react": { "optional": true }
+  }
+}
