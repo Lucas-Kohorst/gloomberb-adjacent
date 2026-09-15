@@ -10,7 +10,7 @@ Listed in the [Gloomberb plugin directory](https://gloom.sh/plugins) via the `gl
 gloomberb install Lucas-Kohorst/gloomberb-adjacent
 ```
 
-Restart Gloomberb and enable **Adjacent Indices** if it is not already on.
+Installing from the Plugins pane (`PL`) loads it straight away; from the CLI, restart Gloomberb. Enable **Adjacent Indices** if it is not already on.
 
 Requires Gloomberb 0.13.3 or newer.
 
@@ -20,7 +20,7 @@ Requires Gloomberb 0.13.3 or newer.
 | --- | --- | --- |
 | Adjacent Indices | `ADI` | Blended indices (RED, BLUE, NTI, House, …) |
 | Adjacent Rates | `ADR` | Cross-venue reference rates |
-| Chart series | `G ADJ:red` | History for any index or rate id |
+| Chart series | `G CAP:adjacent-indices:ADJ:red` | History for any index or rate id; or search "adjacent" from a chart's **add series** |
 
 `/` filters the table. Open a row for constituents/sources and a history chart. `o` opens Adjacent.
 
@@ -33,7 +33,7 @@ Public Adjacent endpoints work without a key. For the authenticated catalog, run
 ```bash
 gloomberb fn ADI
 gloomberb fn ADR --json
-gloomberb catalog ADJ red
+gloomberb catalog adjacent
 ```
 
 ## Network
