@@ -3,7 +3,7 @@
   "name": "Adjacent Indices",
   "icon": "icon.svg",
   "tagline": "Prediction-market indices and reference rates from Adjacent",
-  "description": "Browse Adjacent's blended prediction-market indices (RED, BLUE, NTI, House) and cross-venue reference rates. Chart any of them with G ADJ:red. Public endpoints need no key; an Adjacent API key unlocks the authenticated catalog.",
+  "description": "Browse Adjacent's blended prediction-market indices (RED, BLUE, NTI, House) and cross-venue reference rates. Chart any of them from a chart's add series search. Public endpoints need no key; an Adjacent API key unlocks the authenticated catalog.",
   "categories": ["data"],
   "targets": ["cli", "tui", "desktop", "web"],
   "hosts": ["api.adjacent.markets"],

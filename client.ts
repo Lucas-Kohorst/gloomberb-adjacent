@@ -1,4 +1,3 @@
-import { withConnectionRequest } from "gloomberb/plugins";
 import { createThrottledFetch } from "gloomberb/utils";
 import type {
   AdjacentConstituent,
@@ -6,8 +5,14 @@ import type {
   AdjacentPriceSample,
   AdjacentRate,
 } from "./types";
-import { CONNECTION_ID } from "./types";
 import { unwrapList, unwrapPriceSamples } from "./normalize";
+
+/**
+ * Reports a request into the host's connection health. The plugin passes
+ * `ctx.connectionHealth.track` bound to its source id; a headless caller with
+ * no host context leaves it out and the request runs untracked.
+ */
+export type RequestTracker = <T>(operation: string, run: () => Promise<T>) => Promise<T>;
 
 const BASE_URL = "https://api.adjacent.markets/api/v1";
 
@@ -24,7 +29,10 @@ const fetchJson = createThrottledFetch({
 });
 
 export class AdjacentClient {
-  constructor(private readonly apiKey: string | null) {}
+  constructor(
+    private readonly apiKey: string | null,
+    private readonly track: RequestTracker = (_operation, run) => run(),
+  ) {}
 
   private publicMode(): boolean {
     return !this.apiKey;
@@ -39,7 +47,7 @@ export class AdjacentClient {
   }
 
   private async get<T>(path: string): Promise<T> {
-    return withConnectionRequest(CONNECTION_ID, "fetch", async () => {
+    return this.track("fetch", async () => {
       const response = await fetchJson.fetch(`${BASE_URL}${path}`, { headers: this.headers() });
       if (!response.ok) {
         throw new Error(

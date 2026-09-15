@@ -1,22 +1,31 @@
-import type { ResolvedSeries } from "gloomberb/capabilities";
-import type { ChartSeriesCatalogEntry } from "gloomberb/types/plugin";
+import type { ChartSeriesCatalogItem } from "gloomberb/capabilities";
+import { colors } from "gloomberb/theme";
+import type { ResolvedSeries } from "gloomberb/time-series";
 import type { AdjacentClient } from "./client";
 import { normalizeIndex, normalizeRate, samplesToPoints } from "./normalize";
 
-export function catalogEntry(kind: "index" | "rate", id: string, label: string, extra = ""): ChartSeriesCatalogEntry {
+/** A catalog row plus the text the search matches against, which the host does not need. */
+export interface AdjacentCatalogEntry extends ChartSeriesCatalogItem {
+  searchText: string;
+}
+
+export function catalogEntry(kind: "index" | "rate", id: string, label: string, extra = ""): AdjacentCatalogEntry {
   return {
-    id: `ADJ:${id}`,
-    expression: `ADJ:${id}`,
+    seriesId: `ADJ:${id}`,
     label,
-    source: "Adjacent",
-    searchText: [id, label, extra, "adjacent", kind].join(" "),
     description: kind === "index" ? "Adjacent prediction-market index" : "Adjacent reference rate",
-    unit: kind === "index" ? "index" : "percent",
-    frequency: "daily",
+    detail: "Adjacent",
+    searchText: [id, label, extra, "adjacent", kind].join(" "),
   };
 }
 
-export async function loadCatalogEntries(client: AdjacentClient): Promise<ChartSeriesCatalogEntry[]> {
+/** What the host's catalog receives: the entry without the search text. */
+export function toCatalogItem(entry: AdjacentCatalogEntry): ChartSeriesCatalogItem {
+  const { searchText: _searchText, ...item } = entry;
+  return item;
+}
+
+export async function loadCatalogEntries(client: AdjacentClient): Promise<AdjacentCatalogEntry[]> {
   const [indices, rates] = await Promise.all([
     client.listIndices().catch(() => []),
     client.listRates().catch(() => []),
@@ -47,7 +56,8 @@ export async function resolveAdjacentSeries(
   return {
     id: `ADJ:${id}`,
     label: id,
-    color: "",
+    // The host rejects an empty colour; the chart recolours per slot anyway.
+    color: colors.textBright,
     unit: kind === "index" ? "index" : "percent",
     unitGroup: kind === "index" ? "level" : "percent",
     nativeFrequency: "daily",
