@@ -5,9 +5,6 @@ import {
   EmptyState,
   InputSearchBar,
   Spinner,
-  StaticChartSurface,
-  footerErrorChip,
-  nextStackSortPreference,
   useExternalLinkFooter,
   usePaneFooter,
   type DataTableCell,
@@ -15,10 +12,10 @@ import {
 } from "gloomberb/components";
 import { colors, priceColor } from "gloomberb/theme";
 import { formatPercentRaw, isPlainKey } from "gloomberb/utils";
-import { paneSearchHint, useAutoRefresh, usePaneInstance, usePluginConfigState, useShortcut } from "gloomberb/react";
+import { useAutoRefresh, usePaneInstance, usePluginConfigState, useShortcut } from "gloomberb/react";
 import type { PaneProps } from "gloomberb/types/plugin";
-import { AdjacentClient } from "./client";
 import { matchesQuery, normalizeRate, samplesToPoints } from "./normalize";
+import { HistoryChart, errorSegment, nextSortState, searchHint, useAdjacentClient } from "./shared";
 import { API_KEY_CONFIG, type AdjacentRateRow, type PricePoint } from "./types";
 
 type Status = "idle" | "loading" | "loaded" | "error";
@@ -30,8 +27,10 @@ const COLUMNS: DataTableColumn[] = [
   { id: "spread", label: "SPREAD", width: 8, align: "right" },
 ];
 
-function renderCell(row: AdjacentRateRow, column: DataTableColumn, selected: boolean): DataTableCell {
-  const sel = selected ? colors.selectedText : undefined;
+type SortColumn = "name" | "value" | "chg1d" | "spread";
+
+function renderCell(row: AdjacentRateRow, column: DataTableColumn, _index: number, rowState: { selected: boolean }): DataTableCell {
+  const sel = rowState.selected ? colors.selectedText : undefined;
   switch (column.id) {
     case "name":
       return { text: row.name, color: sel ?? colors.textBright, attributes: TextAttributes.BOLD };
@@ -48,30 +47,10 @@ function renderCell(row: AdjacentRateRow, column: DataTableColumn, selected: boo
   }
 }
 
-function Chart({ points, width, height }: { points: PricePoint[]; width: number; height: number }) {
-  if (points.length === 0) return <EmptyState title="No history." />;
-  return (
-    <StaticChartSurface
-      points={points.map((point) => ({ date: point.date, close: point.value }))}
-      width={width}
-      height={height}
-      mode="line"
-      colors={{
-        lineColor: colors.positive,
-        gridColor: colors.borderFocused,
-        crosshairColor: colors.textMuted,
-        bgColor: colors.bg,
-        axisColor: colors.textDim,
-      }}
-      showTimeAxis
-    />
-  );
-}
-
 export function AdjacentRatesPane({ paneId, focused, width, height }: PaneProps) {
   const paneInstance = usePaneInstance();
   const [apiKey] = usePluginConfigState<string>(API_KEY_CONFIG, "");
-  const client = useMemo(() => new AdjacentClient(apiKey || null), [apiKey]);
+  const client = useAdjacentClient(apiKey);
   const seed = typeof paneInstance?.params?.query === "string" ? paneInstance.params.query.trim() : "";
   const [query, setQuery] = useState(seed);
   const [searchFocused, setSearchFocused] = useState(false);
@@ -80,7 +59,7 @@ export function AdjacentRatesPane({ paneId, focused, width, height }: PaneProps)
   const [rows, setRows] = useState<AdjacentRateRow[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
-  const [sortColumnId, setSortColumnId] = useState("chg1d");
+  const [sortColumnId, setSortColumnId] = useState<SortColumn>("chg1d");
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc");
   const [prices, setPrices] = useState<PricePoint[]>([]);
   const [searchToken, setSearchToken] = useState(0);
@@ -143,14 +122,14 @@ export function AdjacentRatesPane({ paneId, focused, width, height }: PaneProps)
     }
   }, { enabled: focused && !searchFocused });
 
-  const errorChip = footerErrorChip(error);
+  const errorInfo = errorSegment(error);
   usePaneFooter(paneId, () => ({
     info: [
       ...(status === "loading" ? [{ id: "loading", parts: [{ text: "loading", tone: "muted" as const }] }] : []),
-      ...(errorChip ? [{ id: "error", parts: [errorChip] }] : []),
+      ...(errorInfo ? [errorInfo] : []),
     ],
-    hints: [paneSearchHint(() => { setSearchFocused(true); setSearchToken((token) => token + 1); })],
-  }), [errorChip, status, searchToken]);
+    hints: [searchHint(() => { setSearchFocused(true); setSearchToken((token) => token + 1); })],
+  }), [errorInfo, status]);
 
   useExternalLinkFooter({
     registrationId: `${paneId}:open`,
@@ -182,7 +161,7 @@ export function AdjacentRatesPane({ paneId, focused, width, height }: PaneProps)
         {selected.value == null ? "—" : selected.value.toFixed(2)}
         {selected.change1d == null ? "" : `   1D ${formatPercentRaw(selected.change1d)}`}
       </Text>
-      <Chart points={prices} width={Math.max(20, width - 2)} height={Math.max(6, height - 8)} />
+      <HistoryChart points={prices} width={Math.max(20, width - 2)} height={Math.max(6, height - 8)} />
     </Box>
   ) : null;
 
@@ -223,9 +202,9 @@ export function AdjacentRatesPane({ paneId, focused, width, height }: PaneProps)
       sortColumnId={sortColumnId}
       sortDirection={sortDirection}
       onHeaderClick={(columnId) => {
-        const next = nextStackSortPreference(
+        const next = nextSortState(
           { columnId: sortColumnId, direction: sortDirection },
-          columnId,
+          columnId as SortColumn,
           columnId === "name" ? "asc" : "desc",
         );
         setSortColumnId(next.columnId);

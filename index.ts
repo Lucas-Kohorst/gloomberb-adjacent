@@ -1,9 +1,9 @@
-import type { GloomPlugin, HeadlessPaneDefinition, PaneTemplateCreateOptions } from "gloomberb/types/plugin";
-import { createChartSource } from "gloomberb/plugins";
+import { chartSeriesProvider } from "gloomberb/capabilities";
+import type { GloomPlugin, GloomPluginContext, HeadlessPaneDefinition, PaneTemplateCreateOptions } from "gloomberb/types/plugin";
 import { AdjacentIndicesPane } from "./indices";
 import { AdjacentRatesPane } from "./rates";
 import { AdjacentClient } from "./client";
-import { loadCatalogEntries, resolveAdjacentSeries } from "./series";
+import { loadCatalogEntries, resolveAdjacentSeries, toCatalogItem } from "./series";
 import { API_KEY_CONFIG, CONNECTION_ID, PLUGIN_ID } from "./types";
 import { normalizeIndex, normalizeRate } from "./normalize";
 
@@ -65,9 +65,12 @@ const ratesHeadless = {
   },
 } satisfies HeadlessPaneDefinition<"rows">;
 
-function clientFrom(ctx: { configState?: { get<T>(key: string): T | undefined } }): AdjacentClient {
-  const stored = ctx.configState?.get<string>(API_KEY_CONFIG);
-  return new AdjacentClient(stored || process.env.ADJACENT_API_KEY || null);
+function clientFrom(ctx: GloomPluginContext): AdjacentClient {
+  const stored = ctx.configState.get<string>(API_KEY_CONFIG);
+  return new AdjacentClient(
+    stored || process.env.ADJACENT_API_KEY || null,
+    (operation, run) => ctx.connectionHealth.track(CONNECTION_ID, operation, run),
+  );
 }
 
 export const adjacentIndicesPlugin: GloomPlugin = {
@@ -76,6 +79,7 @@ export const adjacentIndicesPlugin: GloomPlugin = {
   version: "0.1.0",
   description: "Adjacent prediction-market indices and reference rates.",
   toggleable: true,
+  hosts: ["api.adjacent.markets"],
   panes: [
     {
       id: "adjacent-indices",
@@ -103,9 +107,8 @@ export const adjacentIndicesPlugin: GloomPlugin = {
       id: "adjacent-indices-pane",
       paneId: "adjacent-indices",
       label: "Adjacent Indices",
-      description: "Browse Adjacent prediction-market indices (RED, BLUE, NTI, house). Chart one with G ADJ:red.",
+      description: "Browse Adjacent prediction-market indices (RED, BLUE, NTI, house). Chart one with G CAP:adjacent-indices:ADJ:red.",
       keywords: ["adjacent", "indices", "prediction", "markets", "red", "blue", "nti", "house"],
-      category: "Data",
       shortcut: { prefix: "ADI", argPlaceholder: "ticker or name", argKind: "text", argOptional: true },
       createInstance: templateInstance,
     },
@@ -113,35 +116,43 @@ export const adjacentIndicesPlugin: GloomPlugin = {
       id: "adjacent-rates-pane",
       paneId: "adjacent-rates",
       label: "Adjacent Reference Rates",
-      description: "Cross-platform prediction market reference rates. Chart one with G ADJ:house.",
+      description: "Cross-platform prediction market reference rates. Chart one with G CAP:adjacent-indices:ADJ:house.",
       keywords: ["adjacent", "rates", "reference", "prediction", "markets"],
-      category: "Data",
       shortcut: { prefix: "ADR", argPlaceholder: "rate", argKind: "text", argOptional: true },
       createInstance: templateInstance,
     },
   ],
   setup(ctx) {
-    createChartSource(ctx, {
+    // Shows up in the Connections pane, and every request the client makes
+    // reports its outcome there.
+    ctx.connectionHealth.registerSource({
+      id: CONNECTION_ID,
+      name: "Adjacent",
+      kind: "api",
+      ownerId: PLUGIN_ID,
+    });
+
+    // `G CAP:adjacent-indices:ADJ:red` and the chart composer's series search
+    // resolve through this.
+    ctx.registerCapability(chartSeriesProvider({
       id: PLUGIN_ID,
       name: "Adjacent",
-      catalog: {
-        id: PLUGIN_ID,
-        name: "Adjacent",
-        sourceId: PLUGIN_ID,
-        minQueryLength: 2,
-        assist: {
-          keywords: ["adjacent", "index", "rate", "prediction"],
-          examples: ["ADJ:red", "house", "nti"],
+      provider: {
+        async catalog() {
+          return (await loadCatalogEntries(clientFrom(ctx))).map(toCatalogItem);
         },
-        async search(query) {
+        async search({ query, limit }) {
+          const tokens = (query ?? "").toLowerCase().split(/\s+/).filter(Boolean);
+          if (tokens.length === 0) return [];
           const entries = await loadCatalogEntries(clientFrom(ctx));
-          const tokens = query.toLowerCase().split(/\s+/).filter(Boolean);
-          return entries.filter((entry) => tokens.every((token) => entry.searchText.toLowerCase().includes(token)));
+          const matches = entries
+            .filter((entry) => tokens.every((token) => entry.searchText.toLowerCase().includes(token)))
+            .map(toCatalogItem);
+          return limit ? matches.slice(0, limit) : matches;
         },
+        resolve: ({ seriesId }) => resolveAdjacentSeries(clientFrom(ctx), seriesId),
       },
-      resolve: (seriesId) => resolveAdjacentSeries(clientFrom(ctx), seriesId),
-      connection: { kind: "api", authRequired: false },
-    });
+    }));
 
     ctx.registerCommand({
       id: "adjacent-set-api-key",
@@ -167,10 +178,6 @@ export const adjacentIndicesPlugin: GloomPlugin = {
         });
       },
     });
-
-    ctx.registerAgentPromptFragment(
-      "Adjacent indices: pane.createFromTemplate adjacent-indices-pane (ADI). Rates: adjacent-rates-pane (ADR). Chart with G ADJ:<id>.",
-    );
   },
 };
 
