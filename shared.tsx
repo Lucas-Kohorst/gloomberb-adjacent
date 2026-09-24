@@ -1,5 +1,6 @@
 import {
   EmptyState,
+  Spinner,
   StatGrid,
   StaticChartSurface,
   statGridRows,
@@ -63,11 +64,12 @@ export function changeStat(id: string, label: string, value: number | null): Sta
 
 /**
  * The open row: its figures in a stat band, then its history. The stack bar
- * above already names the item, so the body starts with the figures.
+ * above already names the item, so the body starts with the figures. `points`
+ * is null while the history loads.
  */
 export function HistoryDetail({ stats, points, width, height }: {
   stats: StatItem[];
-  points: PricePoint[];
+  points: PricePoint[] | null;
   width: number;
   height: number;
 }) {
@@ -82,7 +84,10 @@ export function HistoryDetail({ stats, points, width, height }: {
   );
 }
 
-function HistoryChart({ points, width, height }: { points: PricePoint[]; width: number; height: number }) {
+function HistoryChart({ points, width, height }: { points: PricePoint[] | null; width: number; height: number }) {
+  if (points == null) {
+    return <Spinner label="Loading history..." />;
+  }
   if (points.length === 0) {
     return <EmptyState title="No history." />;
   }

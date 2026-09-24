@@ -60,7 +60,8 @@ export function AdjacentRatesPane({ paneId, focused, width, height }: PaneProps)
   const [detailOpen, setDetailOpen] = useState(false);
   const [sortColumnId, setSortColumnId] = useState<SortColumn>("chg1d");
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc");
-  const [prices, setPrices] = useState<PricePoint[]>([]);
+  // Keyed by row, so an open row never draws the previous row's history.
+  const [history, setHistory] = useState<{ id: string; points: PricePoint[] } | null>(null);
   const [searchToken, setSearchToken] = useState(0);
   const [updatedAt, setUpdatedAt] = useState<number | null>(null);
   const searchInputRef = useRef<InputRenderable | null>(null);
@@ -99,15 +100,13 @@ export function AdjacentRatesPane({ paneId, focused, width, height }: PaneProps)
   const selected = visible.find((row) => row.id === selectedId) ?? visible[0] ?? null;
 
   useEffect(() => {
-    if (!selected) {
-      setPrices([]);
-      return;
-    }
+    if (!selected) return;
+    const id = selected.id;
     let cancelled = false;
-    void client.getRatePrices(selected.id).then((samples) => {
-      if (!cancelled) setPrices(samplesToPoints(samples));
+    void client.getRatePrices(id).then((samples) => {
+      if (!cancelled) setHistory({ id, points: samplesToPoints(samples) });
     }).catch(() => {
-      if (!cancelled) setPrices([]);
+      if (!cancelled) setHistory({ id, points: [] });
     });
     return () => { cancelled = true; };
   }, [client, selected?.id]);
@@ -158,7 +157,7 @@ export function AdjacentRatesPane({ paneId, focused, width, height }: PaneProps)
         changeStat("chg1d", "1D", selected.change1d),
         changeStat("spread", "Spread", selected.spread),
       ]}
-      points={prices}
+      points={history?.id === selected.id ? history.points : null}
       width={width}
       height={Math.max(8, height - 1)}
     />
