@@ -11,5 +11,5 @@
     "panes": ["adjacent-indices", "adjacent-rates"],
     "capabilities": ["adjacent-indices"]
   },
-  "minGloomberb": "0.13.3"
+  "minGloomberb": "0.15.0"
 }

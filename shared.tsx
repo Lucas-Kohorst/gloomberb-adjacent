@@ -1,6 +1,16 @@
-import { EmptyState, StaticChartSurface, type PaneFooterSegment, type PaneHint } from "gloomberb/components";
+import {
+  EmptyState,
+  StatGrid,
+  StaticChartSurface,
+  statGridRows,
+  type PaneFooterSegment,
+  type PaneHint,
+  type StatItem,
+} from "gloomberb/components";
 import { useConnectionHealth } from "gloomberb/react";
-import { colors } from "gloomberb/theme";
+import { colors, priceColor } from "gloomberb/theme";
+import { Box } from "gloomberb/ui";
+import { formatPercentRaw } from "gloomberb/utils";
 import { useMemo } from "react";
 import { AdjacentClient } from "./client";
 import { CONNECTION_ID, type PricePoint } from "./types";
@@ -39,7 +49,40 @@ export function nextSortState<Id extends string>(
   return { columnId, direction: defaultDirection };
 }
 
-export function HistoryChart({ points, width, height }: { points: PricePoint[]; width: number; height: number }) {
+/** A value, or a dash when the source has none. */
+export function formatValue(value: number | null): string {
+  return value == null ? "—" : value.toFixed(2);
+}
+
+/** A percent change figure for the detail's stat band, coloured like the table cell. */
+export function changeStat(id: string, label: string, value: number | null): StatItem {
+  return value == null
+    ? { id, label, value: "—", tone: "muted" }
+    : { id, label, value: formatPercentRaw(value), color: priceColor(value) };
+}
+
+/**
+ * The open row: its figures in a stat band, then its history. The stack bar
+ * above already names the item, so the body starts with the figures.
+ */
+export function HistoryDetail({ stats, points, width, height }: {
+  stats: StatItem[];
+  points: PricePoint[];
+  width: number;
+  height: number;
+}) {
+  const chartHeight = Math.max(6, Math.floor(height - statGridRows(stats, width)));
+  return (
+    <Box flexDirection="column" width={width} height={height}>
+      <StatGrid items={stats} width={width} />
+      <Box paddingX={1} flexGrow={1} minHeight={0}>
+        <HistoryChart points={points} width={Math.max(20, width - 2)} height={chartHeight} />
+      </Box>
+    </Box>
+  );
+}
+
+function HistoryChart({ points, width, height }: { points: PricePoint[]; width: number; height: number }) {
   if (points.length === 0) {
     return <EmptyState title="No history." />;
   }

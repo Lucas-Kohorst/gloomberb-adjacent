@@ -1,10 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Box, Text, TextAttributes, type InputRenderable } from "gloomberb/ui";
+import { TextAttributes, type InputRenderable } from "gloomberb/ui";
 import {
   DataTableStackView,
-  EmptyState,
-  InputSearchBar,
-  Spinner,
+  PaneStatusBody,
+  QueryBar,
   useExternalLinkFooter,
   usePaneFooter,
   type DataTableCell,
@@ -15,7 +14,7 @@ import { formatPercentRaw, isPlainKey } from "gloomberb/utils";
 import { useAutoRefresh, usePaneInstance, usePluginConfigState, useShortcut } from "gloomberb/react";
 import type { PaneProps } from "gloomberb/types/plugin";
 import { matchesQuery, normalizeRate, samplesToPoints } from "./normalize";
-import { HistoryChart, errorSegment, nextSortState, searchHint, useAdjacentClient } from "./shared";
+import { HistoryDetail, changeStat, errorSegment, formatValue, nextSortState, searchHint, useAdjacentClient } from "./shared";
 import { API_KEY_CONFIG, type AdjacentRateRow, type PricePoint } from "./types";
 
 type Status = "idle" | "loading" | "loaded" | "error";
@@ -54,7 +53,7 @@ export function AdjacentRatesPane({ paneId, focused, width, height }: PaneProps)
   const seed = typeof paneInstance?.params?.query === "string" ? paneInstance.params.query.trim() : "";
   const [query, setQuery] = useState(seed);
   const [searchFocused, setSearchFocused] = useState(false);
-  const [status, setStatus] = useState<Status>("idle");
+  const [status, setStatus] = useState<Status>("loading");
   const [error, setError] = useState<string | null>(null);
   const [rows, setRows] = useState<AdjacentRateRow[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -114,13 +113,13 @@ export function AdjacentRatesPane({ paneId, focused, width, height }: PaneProps)
   }, [client, selected?.id]);
 
   useShortcut((event) => {
-    if (!focused || searchFocused) return;
+    if (!focused || searchFocused || detailOpen) return;
     if (isPlainKey(event, "/") || isPlainKey(event, "s")) {
       event.preventDefault?.();
       setSearchFocused(true);
       setSearchToken((token) => token + 1);
     }
-  }, { enabled: focused && !searchFocused });
+  }, { enabled: focused && !searchFocused && !detailOpen });
 
   const errorInfo = errorSegment(error);
   usePaneFooter(paneId, () => ({
@@ -128,8 +127,9 @@ export function AdjacentRatesPane({ paneId, focused, width, height }: PaneProps)
       ...(status === "loading" ? [{ id: "loading", parts: [{ text: "loading", tone: "muted" as const }] }] : []),
       ...(errorInfo ? [errorInfo] : []),
     ],
-    hints: [searchHint(() => { setSearchFocused(true); setSearchToken((token) => token + 1); })],
-  }), [errorInfo, status]);
+    // The search bar is hidden while a row is open.
+    hints: detailOpen ? [] : [searchHint(() => { setSearchFocused(true); setSearchToken((token) => token + 1); })],
+  }), [detailOpen, errorInfo, status]);
 
   useExternalLinkFooter({
     registrationId: `${paneId}:open`,
@@ -138,31 +138,30 @@ export function AdjacentRatesPane({ paneId, focused, width, height }: PaneProps)
     showHint: !!selected,
   });
 
-  if (status === "loading" && rows.length === 0) {
+  if (rows.length === 0 && status !== "loaded") {
     return (
-      <Box width={width} height={height} justifyContent="center" alignItems="center">
-        <Spinner label="Loading Adjacent rates..." />
-      </Box>
-    );
-  }
-
-  if (status === "error" && rows.length === 0) {
-    return (
-      <Box width={width} height={height} padding={1}>
-        <EmptyState title="Adjacent rates unavailable." message={error ?? undefined} />
-      </Box>
+      <PaneStatusBody
+        loading={status === "loading"}
+        error={status === "error" ? error : null}
+        subject="Adjacent rates"
+        align={status === "loading" ? "center" : "start"}
+        width={width}
+        height={height}
+      />
     );
   }
 
   const detail = selected && detailOpen ? (
-    <Box flexDirection="column" width={width} height={Math.max(8, height - 1)} padding={1} gap={1}>
-      <Text fg={colors.textBright} attributes={TextAttributes.BOLD}>{selected.name}</Text>
-      <Text fg={colors.textMuted}>
-        {selected.value == null ? "—" : selected.value.toFixed(2)}
-        {selected.change1d == null ? "" : `   1D ${formatPercentRaw(selected.change1d)}`}
-      </Text>
-      <HistoryChart points={prices} width={Math.max(20, width - 2)} height={Math.max(6, height - 8)} />
-    </Box>
+    <HistoryDetail
+      stats={[
+        { id: "value", label: "Value", value: formatValue(selected.value) },
+        changeStat("chg1d", "1D", selected.change1d),
+        changeStat("spread", "Spread", selected.spread),
+      ]}
+      points={prices}
+      width={width}
+      height={Math.max(8, height - 1)}
+    />
   ) : null;
 
   return (
@@ -184,19 +183,20 @@ export function AdjacentRatesPane({ paneId, focused, width, height }: PaneProps)
       columns={COLUMNS}
       items={visible}
       rootBefore={(
-        <InputSearchBar
-          value={query}
-          focused={focused}
-          active={searchFocused}
+        <QueryBar
           width={width}
-          focusToken={searchToken}
-          inputRef={searchInputRef}
-          placeholder="rate name"
-          debounceMs={80}
-          onFocus={() => setSearchFocused(true)}
-          onBlur={() => setSearchFocused(false)}
-          onNavigateDown={() => setSearchFocused(false)}
-          onQueryChange={setQuery}
+          search={{
+            value: query,
+            onChange: setQuery,
+            placeholder: "rate name",
+            focused: focused && !detailOpen,
+            active: searchFocused,
+            onActiveChange: setSearchFocused,
+            focusToken: searchToken,
+            inputRef: searchInputRef,
+            debounceMs: 80,
+            onNavigateDown: () => setSearchFocused(false),
+          }}
         />
       )}
       sortColumnId={sortColumnId}
