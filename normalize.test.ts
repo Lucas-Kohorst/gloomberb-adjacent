@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { matchesQuery, normalizeIndex, normalizeRate, samplesToPoints, unwrapList, unwrapPriceSamples } from "./normalize";
+import { matchesQuery, normalizeIndex, normalizeRate, samplesToPoints, unwrapFilings, unwrapList, unwrapNews, unwrapPriceSamples } from "./normalize";
 
 describe("adjacent normalize", () => {
   test("unwraps a { data } list", () => {
@@ -48,7 +48,55 @@ describe("adjacent normalize", () => {
       value: 52.1,
       spread: 0.8,
       change1d: 0.01,
+      sources: [],
     });
+  });
+
+  test("sorts price samples oldest first", () => {
+    const points = samplesToPoints([
+      { timestamp: "2026-10-02T00:00:00Z", price: 98 },
+      { timestamp: "2026-07-05T00:00:00Z", price: 74 },
+    ]);
+    expect(points.map((point) => point.value)).toEqual([74, 98]);
+  });
+
+  test("reads related news from data or news, including article_id rows", () => {
+    const article = {
+      article_id: "hou-1",
+      title: "Texans injury report",
+      url: "https://example.com/texans",
+      source: "USA Today",
+      published_date: "2026-09-25T17:42:11Z",
+      via_market_question: "Will Houston win at least 3 games?",
+    };
+    expect(unwrapNews({ data: [article] })).toEqual([{
+      id: "hou-1",
+      title: "Texans injury report",
+      url: "https://example.com/texans",
+      source: "USA Today",
+      summary: "Will Houston win at least 3 games?",
+      publishedAt: "2026-09-25T17:42:11Z",
+    }]);
+    expect(unwrapNews({ news: [article] })).toHaveLength(1);
+  });
+
+  test("reads filings from filing_id", () => {
+    expect(unwrapFilings({
+      data: [{
+        filing_id: 63380,
+        title: "NFL Starter Designation Contracts",
+        org_code: "QCEX",
+        status: "Certified",
+        status_date: "2026-08-25",
+      }],
+    })).toEqual([{
+      id: 63380,
+      title: "NFL Starter Designation Contracts",
+      orgCode: "QCEX",
+      status: "Certified",
+      statusDate: "2026-08-25",
+      url: null,
+    }]);
   });
 
   test("drops invalid price samples", () => {

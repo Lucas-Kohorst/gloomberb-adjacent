@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Box, Text, TextAttributes, type InputRenderable } from "gloomberb/ui";
+import { Box, TextAttributes, type InputRenderable } from "gloomberb/ui";
 import {
   DataTableStackView,
   EmptyState,
@@ -12,11 +12,12 @@ import {
 } from "gloomberb/components";
 import { colors, priceColor } from "gloomberb/theme";
 import { formatPercentRaw, isPlainKey } from "gloomberb/utils";
-import { useAutoRefresh, usePaneInstance, usePluginConfigState, useShortcut } from "gloomberb/react";
+import { useAutoRefresh, usePaneSettingValue, usePluginConfigState, useShortcut } from "gloomberb/react";
 import type { PaneProps } from "gloomberb/types/plugin";
-import { matchesQuery, normalizeRate, samplesToPoints } from "./normalize";
-import { HistoryChart, errorSegment, nextSortState, searchHint, useAdjacentClient } from "./shared";
-import { API_KEY_CONFIG, type AdjacentRateRow, type PricePoint } from "./types";
+import { RateDetail } from "./detail";
+import { matchesQuery, normalizeRate } from "./normalize";
+import { errorSegment, nextSortState, searchHint, useAdjacentClient } from "./shared";
+import { API_KEY_CONFIG, type AdjacentRateRow } from "./types";
 
 type Status = "idle" | "loading" | "loaded" | "error";
 
@@ -48,10 +49,10 @@ function renderCell(row: AdjacentRateRow, column: DataTableColumn, _index: numbe
 }
 
 export function AdjacentRatesPane({ paneId, focused, width, height }: PaneProps) {
-  const paneInstance = usePaneInstance();
   const [apiKey] = usePluginConfigState<string>(API_KEY_CONFIG, "");
   const client = useAdjacentClient(apiKey);
-  const seed = typeof paneInstance?.params?.query === "string" ? paneInstance.params.query.trim() : "";
+  const [openedQuery] = usePaneSettingValue("query", "");
+  const seed = openedQuery.trim();
   const [query, setQuery] = useState(seed);
   const [searchFocused, setSearchFocused] = useState(false);
   const [status, setStatus] = useState<Status>("idle");
@@ -61,8 +62,8 @@ export function AdjacentRatesPane({ paneId, focused, width, height }: PaneProps)
   const [detailOpen, setDetailOpen] = useState(false);
   const [sortColumnId, setSortColumnId] = useState<SortColumn>("chg1d");
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc");
-  const [prices, setPrices] = useState<PricePoint[]>([]);
   const [searchToken, setSearchToken] = useState(0);
+  const reloadDetail = useRef<() => void>(() => {});
   const [updatedAt, setUpdatedAt] = useState<number | null>(null);
   const searchInputRef = useRef<InputRenderable | null>(null);
 
@@ -74,12 +75,12 @@ export function AdjacentRatesPane({ paneId, focused, width, height }: PaneProps)
       setRows(next);
       setStatus("loaded");
       setUpdatedAt(Date.now());
-      if (!selectedId && next[0]) setSelectedId(next[0].id);
+      setSelectedId((current) => current ?? next[0]?.id ?? null);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Adjacent rates unavailable.");
       setStatus("error");
     }
-  }, [client, selectedId]);
+  }, [client]);
 
   useEffect(() => { void load(); }, [load]);
   useAutoRefresh(updatedAt, () => { void load(); });
@@ -100,18 +101,13 @@ export function AdjacentRatesPane({ paneId, focused, width, height }: PaneProps)
   const selected = visible.find((row) => row.id === selectedId) ?? visible[0] ?? null;
 
   useEffect(() => {
-    if (!selected) {
-      setPrices([]);
-      return;
-    }
-    let cancelled = false;
-    void client.getRatePrices(selected.id).then((samples) => {
-      if (!cancelled) setPrices(samplesToPoints(samples));
-    }).catch(() => {
-      if (!cancelled) setPrices([]);
-    });
-    return () => { cancelled = true; };
-  }, [client, selected?.id]);
+    if (!selected) return;
+    const id = selected.id;
+    const timer = setTimeout(() => {
+      void client.getRatePrices(id).catch(() => undefined);
+    }, 80);
+    return () => clearTimeout(timer);
+  }, [client, selected]);
 
   useShortcut((event) => {
     if (!focused || searchFocused) return;
@@ -155,14 +151,14 @@ export function AdjacentRatesPane({ paneId, focused, width, height }: PaneProps)
   }
 
   const detail = selected && detailOpen ? (
-    <Box flexDirection="column" width={width} height={Math.max(8, height - 1)} padding={1} gap={1}>
-      <Text fg={colors.textBright} attributes={TextAttributes.BOLD}>{selected.name}</Text>
-      <Text fg={colors.textMuted}>
-        {selected.value == null ? "—" : selected.value.toFixed(2)}
-        {selected.change1d == null ? "" : `   1D ${formatPercentRaw(selected.change1d)}`}
-      </Text>
-      <HistoryChart points={prices} width={Math.max(20, width - 2)} height={Math.max(6, height - 8)} />
-    </Box>
+    <RateDetail
+      client={client}
+      row={selected}
+      width={Math.max(20, width - 2)}
+      height={Math.max(8, height - 2)}
+      focused={focused && !searchFocused}
+      reloadRef={reloadDetail}
+    />
   ) : null;
 
   return (
@@ -179,6 +175,12 @@ export function AdjacentRatesPane({ paneId, focused, width, height }: PaneProps)
         onChange: setSelectedId,
       }}
       onActivate={() => setDetailOpen(true)}
+      onDetailKeyDown={(event) => {
+        if (!isPlainKey(event, "r")) return false;
+        event.preventDefault?.();
+        reloadDetail.current();
+        return true;
+      }}
       rootWidth={width}
       rootHeight={height}
       columns={COLUMNS}

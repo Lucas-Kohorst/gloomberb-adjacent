@@ -1,7 +1,8 @@
-import { EmptyState, StaticChartSurface, type PaneFooterSegment, type PaneHint } from "gloomberb/components";
+import { EmptyState, Spinner, StaticChartSurface, type PaneFooterSegment, type PaneHint } from "gloomberb/components";
 import { useConnectionHealth } from "gloomberb/react";
-import { colors } from "gloomberb/theme";
+import { colors, priceColor } from "gloomberb/theme";
 import { useMemo } from "react";
+import { Box } from "gloomberb/ui";
 import { AdjacentClient } from "./client";
 import { CONNECTION_ID, type PricePoint } from "./types";
 
@@ -39,8 +40,27 @@ export function nextSortState<Id extends string>(
   return { columnId, direction: defaultDirection };
 }
 
-export function HistoryChart({ points, width, height }: { points: PricePoint[]; width: number; height: number }) {
-  if (points.length === 0) {
+export function HistoryChart({
+  points,
+  width,
+  height,
+  loading = false,
+}: {
+  points: PricePoint[];
+  width: number;
+  height: number;
+  loading?: boolean;
+}) {
+  const first = points[0];
+  const last = points[points.length - 1];
+  if (loading && !first) {
+    return (
+      <Box width={width} height={height} justifyContent="center" alignItems="center">
+        <Spinner label="Loading history..." />
+      </Box>
+    );
+  }
+  if (!first || !last) {
     return <EmptyState title="No history." />;
   }
   return (
@@ -57,7 +77,7 @@ export function HistoryChart({ points, width, height }: { points: PricePoint[]; 
       height={height}
       mode="line"
       colors={{
-        lineColor: colors.positive,
+        lineColor: priceColor(last.value - first.value),
         gridColor: colors.borderFocused,
         crosshairColor: colors.textMuted,
         bgColor: colors.bg,
