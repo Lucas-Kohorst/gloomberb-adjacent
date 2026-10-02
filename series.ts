@@ -1,6 +1,5 @@
-import type { ChartSeriesCatalogItem } from "gloomberb/capabilities";
-import { colors } from "gloomberb/theme";
-import type { ResolvedSeries } from "gloomberb/time-series";
+import type { ChartSeriesCatalogItem, ResolvedSeries } from "gloomberb/capabilities";
+import { priceColor } from "gloomberb/theme";
 import type { AdjacentClient } from "./client";
 import { normalizeIndex, normalizeRate, samplesToPoints } from "./normalize";
 
@@ -43,7 +42,7 @@ export async function loadCatalogEntries(client: AdjacentClient): Promise<Adjace
 }
 
 export async function resolveAdjacentSeries(
-  client: AdjacentClient,
+  client: Pick<AdjacentClient, "getIndexPrices" | "getRatePrices">,
   seriesId: string,
 ): Promise<ResolvedSeries> {
   const id = seriesId.replace(/^ADJ:/i, "").trim();
@@ -53,18 +52,19 @@ export async function resolveAdjacentSeries(
     points = samplesToPoints(await client.getRatePrices(id).catch(() => []));
     kind = "rate";
   }
+  const first = points[0]?.value ?? 0;
+  const last = points[points.length - 1]?.value ?? first;
   return {
     id: `ADJ:${id}`,
     label: id,
-    // The host rejects an empty colour; the chart recolours per slot anyway.
-    color: colors.textBright,
+    color: priceColor(last - first),
     unit: kind === "index" ? "index" : "percent",
     unitGroup: kind === "index" ? "level" : "percent",
     nativeFrequency: "daily",
     dataShape: "scalar",
     style: "line",
     transform: "raw",
-    axis: "left",
+    axis: "right",
     panelId: "main",
     interpolation: "none",
     points: points.map((point) => ({

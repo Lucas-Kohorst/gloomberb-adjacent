@@ -22,7 +22,7 @@ Requires Gloomberb 0.13.3 or newer.
 | Adjacent Rates | `ADR` | Cross-venue reference rates |
 | Chart series | `G CAP:adjacent-indices:ADJ:red` | History for any index or rate id; or search "adjacent" from a chart's **add series** |
 
-`/` filters the table. Open a row for constituents/sources and a history chart. `o` opens Adjacent.
+`/` filters the table. Open an index for its chart, constituents, related news, and filings. Filings need an API key. Open a rate for its chart and sources. `o` opens the selected link.
 
 ## API key (optional)
 

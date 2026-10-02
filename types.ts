@@ -41,6 +41,27 @@ export interface AdjacentConstituent {
   weight: number;
   price?: number | null;
   name?: string | null;
+  /** Nested index sleeve vs a venue market. */
+  kind?: string;
+  excluded?: boolean;
+}
+
+export interface AdjacentNewsArticle {
+  id: string;
+  title: string;
+  url: string;
+  source: string;
+  summary: string | null;
+  publishedAt: string;
+}
+
+export interface AdjacentFiling {
+  id: number;
+  title: string;
+  orgCode: string;
+  status: string;
+  statusDate: string | null;
+  url: string | null;
 }
 
 export interface AdjacentPriceSample {
@@ -64,6 +85,7 @@ export interface AdjacentRateRow {
   value: number | null;
   spread: number | null;
   change1d: number | null;
+  sources: AdjacentRateSource[];
 }
 
 export interface PricePoint {

@@ -7,11 +7,13 @@ import { loadCatalogEntries, resolveAdjacentSeries, toCatalogItem } from "./seri
 import { API_KEY_CONFIG, CONNECTION_ID, PLUGIN_ID } from "./types";
 import { normalizeIndex, normalizeRate } from "./normalize";
 
+export { registerAdjacentDetailPreload } from "./detail-preload";
+
 function templateInstance(_context: unknown, options?: PaneTemplateCreateOptions) {
   const query = (options?.arg ?? "").trim();
   return {
     placement: "floating" as const,
-    ...(query ? { params: { query }, title: query } : {}),
+    ...(query ? { params: { query }, settings: { query }, title: query } : {}),
   };
 }
 
@@ -79,7 +81,6 @@ export const adjacentIndicesPlugin: GloomPlugin = {
   version: "0.1.0",
   description: "Adjacent prediction-market indices and reference rates.",
   toggleable: true,
-  hosts: ["api.adjacent.markets"],
   panes: [
     {
       id: "adjacent-indices",
@@ -157,7 +158,7 @@ export const adjacentIndicesPlugin: GloomPlugin = {
     ctx.registerCommand({
       id: "adjacent-set-api-key",
       label: "Adjacent: set API key",
-      description: "Store an Adjacent API key for the authenticated catalog. Leave blank for public endpoints.",
+      description: "Store an Adjacent API key. Public endpoints serve indices, rates, and a short news list. Filings need a key.",
       keywords: ["adjacent", "api", "key"],
       category: "config",
       wizard: [
