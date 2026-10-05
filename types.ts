@@ -92,3 +92,44 @@ export interface PricePoint {
   date: Date;
   value: number;
 }
+
+export type AdjacentTab = "indices" | "rates" | "cftc";
+
+export function adjacentTab(value: unknown): AdjacentTab {
+  return value === "rates" || value === "cftc" ? value : "indices";
+}
+
+/** One CFTC industry filing from Adjacent's filings list. */
+export interface CftcFiling {
+  id: number;
+  title: string;
+  feed: string;
+  orgCode: string;
+  status: string;
+  statusDate: string | null;
+  receiptDate: string | null;
+  predictedEffectiveDate: string | null;
+  docCount: number;
+  description: string | null;
+  productName: string | null;
+  productType: string | null;
+  category: string | null;
+  subcategory: string | null;
+  productsAffected: string | null;
+  remarks: string | null;
+  firstSeenAt: string | null;
+  lastSeenAt: string | null;
+}
+
+export interface CftcPage {
+  filings: CftcFiling[];
+  page: number;
+  perPage: number;
+  hasNext: boolean;
+}
+
+export interface CftcFilingDetail {
+  filing: CftcFiling;
+  markdown: string;
+  sourceUrl: string | null;
+}

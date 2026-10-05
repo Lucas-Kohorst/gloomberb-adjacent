@@ -1,7 +1,7 @@
 {
   "name": "gloomberb-adjacent",
   "version": "0.1.0",
-  "description": "Adjacent prediction-market indices and reference rates for Gloomberb.",
+  "description": "Adjacent prediction-market indices, reference rates, and CFTC filings for Gloomberb.",
   "license": "MIT",
   "type": "module",
   "main": "index.ts",

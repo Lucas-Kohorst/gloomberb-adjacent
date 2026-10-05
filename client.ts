@@ -6,8 +6,10 @@ import type {
   AdjacentNewsArticle,
   AdjacentPriceSample,
   AdjacentRate,
+  CftcFilingDetail,
+  CftcPage,
 } from "./types";
-import { unwrapFilings, unwrapList, unwrapNews, unwrapPriceSamples } from "./normalize";
+import { unwrapCftcDetail, unwrapCftcPage, unwrapFilings, unwrapList, unwrapNews, unwrapPriceSamples } from "./normalize";
 
 /**
  * Reports a request into the host's connection health. The plugin passes
@@ -140,5 +142,34 @@ export class AdjacentClient {
     }
     const path = `/indices/${encodeURIComponent(id)}/filings?per_page=40`;
     return this.cached(path, async () => unwrapFilings(await this.get(path)));
+  }
+
+  /** CFTC industry filings. The public route is the catalog; a key uses the private twin. */
+  private filingsPath(): string {
+    return this.isPublic ? "/public/filings" : "/filings";
+  }
+
+  async listFilings(query: { search?: string; page?: number; perPage?: number } = {}): Promise<CftcPage> {
+    const params = new URLSearchParams();
+    const search = query.search?.trim();
+    if (search) params.set("search", search);
+    if (query.page && query.page > 1) params.set("page", String(query.page));
+    const perPage = Math.min(Math.max(query.perPage ?? 100, 1), 100);
+    params.set("per_page", String(perPage));
+    params.set("sort", "first_seen");
+    params.set("sort_dir", "desc");
+    return unwrapCftcPage(await this.get(`${this.filingsPath()}?${params.toString()}`));
+  }
+
+  async getFilingDetail(id: number): Promise<CftcFilingDetail | null> {
+    const path = `${this.filingsPath()}/${encodeURIComponent(String(id))}/markdown`;
+    return this.cached(path, async () => {
+      try {
+        return unwrapCftcDetail(await this.get(path));
+      } catch (error) {
+        if (error instanceof Error && error.message.includes("(404)")) return null;
+        throw error;
+      }
+    });
   }
 }

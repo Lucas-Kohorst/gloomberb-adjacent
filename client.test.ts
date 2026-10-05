@@ -77,6 +77,42 @@ describe("AdjacentClient detail routes", () => {
     expect(page[0]?.orgCode).toBe("QCEX");
   });
 
+  test("lists public CFTC filings", async () => {
+    const seen = mockFetch({
+      data: [{ id: 64839, title: "Dogecoin spot update", feed: "ptc_dcm_rules", org_code: "BTNL" }],
+      meta: { page: 1, per_page: 100, has_next: false },
+    });
+    const client = new AdjacentClient(null);
+    const page = await client.listFilings({ search: "dogecoin", perPage: 100 });
+    expect(seen.urls).toEqual([
+      "https://api.adjacent.markets/api/v1/public/filings?search=dogecoin&per_page=100&sort=first_seen&sort_dir=desc",
+    ]);
+    expect(page.filings[0]?.orgCode).toBe("BTNL");
+    expect(seen.authorizations).toEqual([null]);
+  });
+
+  test("loads keyed CFTC filing markdown once", async () => {
+    const seen = mockFetch({
+      filing: { id: 64839, title: "Dogecoin spot update" },
+      markdown: "See [the filing](https://www.cftc.gov/IndustryOversight/IndustryFilings/PTCDCMRules/64839)",
+      source_url: "https://www.cftc.gov/IndustryOversight/IndustryFilings/PTCDCMRules/64839",
+    });
+    const client = new AdjacentClient("ak_test");
+    const detail = await client.getFilingDetail(64839);
+    await client.getFilingDetail(64839);
+    expect(seen.urls).toEqual([
+      "https://api.adjacent.markets/api/v1/filings/64839/markdown",
+    ]);
+    expect(seen.authorizations).toEqual(["Bearer ak_test"]);
+    expect(detail?.sourceUrl).toBe("https://www.cftc.gov/IndustryOversight/IndustryFilings/PTCDCMRules/64839");
+  });
+
+  test("treats a missing filing as empty", async () => {
+    mockFetch({ error: "missing" }, 404);
+    const detail = await new AdjacentClient(null).getFilingDetail(404);
+    expect(detail).toBeNull();
+  });
+
   test("does not request filings without an API key", async () => {
     const seen = mockFetch({ data: [] });
     await expect(new AdjacentClient(null).getIndexFilings("hou_nti")).rejects.toThrow(/API key/);

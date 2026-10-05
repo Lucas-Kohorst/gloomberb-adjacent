@@ -1,14 +1,14 @@
 {
   "id": "adjacent-indices",
-  "name": "Adjacent Indices",
+  "name": "Adjacent",
   "icon": "icon.svg",
-  "tagline": "Prediction-market indices and reference rates from Adjacent",
-  "description": "Browse Adjacent's blended prediction-market indices (RED, BLUE, NTI, House) and cross-venue reference rates. An index opens onto its chart, constituents, related news, and filings. Chart any series from a chart's add series search. Public endpoints need no key; filings and the authenticated catalog need an Adjacent API key.",
+  "tagline": "Prediction-market indices, reference rates, and CFTC filings from Adjacent",
+  "description": "One Adjacent pane, opened with ADJ. Tabs are Indices, Rates, and CFTC. An index opens onto its chart, constituents, related news, and filings. Chart any series from a chart's add series search. Public endpoints need no key. Related index filings and the authenticated catalog need an Adjacent API key. Public CFTC filings cover the last 90 days.",
   "categories": ["data"],
   "targets": ["cli", "tui", "desktop", "web"],
   "hosts": ["api.adjacent.markets"],
   "contributes": {
-    "panes": ["adjacent-indices", "adjacent-rates"],
+    "panes": ["adjacent"],
     "capabilities": ["adjacent-indices"]
   },
   "minGloomberb": "0.13.3"

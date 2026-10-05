@@ -7,6 +7,9 @@ import type {
   AdjacentRate,
   AdjacentRateRow,
   AdjacentRateSource,
+  CftcFiling,
+  CftcFilingDetail,
+  CftcPage,
   PricePoint,
 } from "./types";
 
@@ -157,6 +160,77 @@ export function unwrapFilings(raw: unknown): AdjacentFiling[] {
     });
   }
   return filings;
+}
+
+function recordOf(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  return Object.fromEntries(Object.entries(value));
+}
+
+function finiteId(value: unknown): number | null {
+  const id = typeof value === "number" ? value : typeof value === "string" ? Number(value) : Number.NaN;
+  return Number.isFinite(id) ? id : null;
+}
+
+export function parseCftcFiling(value: unknown): CftcFiling | null {
+  const item = recordOf(value);
+  if (!item) return null;
+  const id = finiteId(item.filing_id ?? item.id);
+  const title = stringField(item, "title");
+  if (id == null || !title) return null;
+  return {
+    id,
+    title,
+    feed: stringField(item, "feed") ?? "",
+    orgCode: stringField(item, "org_code") ?? "",
+    status: stringField(item, "status") ?? "",
+    statusDate: stringField(item, "status_date"),
+    receiptDate: stringField(item, "receipt_date"),
+    predictedEffectiveDate: stringField(item, "predicted_effective_date"),
+    docCount: numberField(item, "doc_count") ?? 0,
+    description: stringField(item, "description"),
+    productName: stringField(item, "product_name"),
+    productType: stringField(item, "product_type"),
+    category: stringField(item, "category"),
+    subcategory: stringField(item, "subcategory"),
+    productsAffected: stringField(item, "products_affected"),
+    remarks: stringField(item, "remarks"),
+    firstSeenAt: stringField(item, "first_seen_at"),
+    lastSeenAt: stringField(item, "last_seen_at"),
+  };
+}
+
+function cftcSourceUrl(markdown: string): string | null {
+  const match = /https:\/\/www\.cftc\.gov\/[^\s)]+/.exec(markdown);
+  return match?.[0] ?? null;
+}
+
+export function unwrapCftcPage(raw: unknown): CftcPage {
+  const record = recordOf(raw);
+  const rows = record && Array.isArray(record.data) ? record.data : [];
+  const filings = rows.map(parseCftcFiling).filter((row): row is CftcFiling => row !== null);
+  const meta = record ? recordOf(record.meta) : null;
+  const page = meta ? numberField(meta, "page") ?? 1 : 1;
+  const perPage = meta ? numberField(meta, "per_page") ?? filings.length : filings.length;
+  const totalPages = meta ? numberField(meta, "total_pages") : null;
+  const total = meta ? numberField(meta, "total") : null;
+  const hasNext = meta?.has_next === true
+    || (totalPages != null && page < totalPages)
+    || (total != null && perPage > 0 && page * perPage < total);
+  return { filings, page, perPage, hasNext };
+}
+
+export function unwrapCftcDetail(raw: unknown): CftcFilingDetail | null {
+  const record = recordOf(raw);
+  if (!record) return null;
+  const filing = parseCftcFiling(record.filing);
+  if (!filing) return null;
+  const markdown = stringField(record, "markdown") ?? "";
+  return {
+    filing,
+    markdown,
+    sourceUrl: stringField(record, "source_url") ?? cftcSourceUrl(markdown),
+  };
 }
 
 export function matchesQuery(haystack: string, query: string): boolean {

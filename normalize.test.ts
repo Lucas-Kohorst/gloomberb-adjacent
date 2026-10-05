@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { matchesQuery, normalizeIndex, normalizeRate, samplesToPoints, unwrapFilings, unwrapList, unwrapNews, unwrapPriceSamples } from "./normalize";
+import { matchesQuery, normalizeIndex, normalizeRate, samplesToPoints, unwrapCftcDetail, unwrapCftcPage, unwrapFilings, unwrapList, unwrapNews, unwrapPriceSamples } from "./normalize";
 
 describe("adjacent normalize", () => {
   test("unwraps a { data } list", () => {
@@ -105,6 +105,36 @@ describe("adjacent normalize", () => {
       { timestamp: "2026-09-01T00:00:00Z", price: null },
       { timestamp: "2026-09-01T00:00:00Z", price: 100 },
     ])).toHaveLength(1);
+  });
+
+  test("reads a CFTC filings page and its markdown detail", () => {
+    const page = unwrapCftcPage({
+      data: [{
+        id: 64839,
+        title: "Update to Dogecoin US Dollar Spot contract terms",
+        feed: "ptc_dcm_rules",
+        org_code: "BTNL",
+        status: "10 Day Review",
+        status_date: "2026-10-02",
+        doc_count: 1,
+        first_seen_at: "2026-10-02T23:50:00.744582Z",
+      }],
+      meta: { total: 2633, page: 1, per_page: 1, total_pages: 2633, has_next: true, has_prev: false },
+    });
+    expect(page.filings[0]).toMatchObject({
+      id: 64839,
+      orgCode: "BTNL",
+      feed: "ptc_dcm_rules",
+      docCount: 1,
+    });
+    expect(page.hasNext).toBe(true);
+
+    const detail = unwrapCftcDetail({
+      filing: { id: 64839, title: "Update to Dogecoin US Dollar Spot contract terms" },
+      markdown: "Source: [filing](https://www.cftc.gov/IndustryOversight/IndustryFilings/PTCDCMRules/64839)",
+    });
+    expect(detail?.sourceUrl).toBe("https://www.cftc.gov/IndustryOversight/IndustryFilings/PTCDCMRules/64839");
+    expect(unwrapCftcDetail({ markdown: "no filing" })).toBeNull();
   });
 
   test("matches all query tokens", () => {

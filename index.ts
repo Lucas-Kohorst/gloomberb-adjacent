@@ -1,11 +1,11 @@
 import { chartSeriesProvider } from "gloomberb/capabilities";
-import type { GloomPlugin, GloomPluginContext, HeadlessPaneDefinition, PaneTemplateCreateOptions } from "gloomberb/types/plugin";
-import { AdjacentIndicesPane } from "./indices";
-import { AdjacentRatesPane } from "./rates";
+import type { GloomPlugin, GloomPluginContext, HeadlessPaneDefinition, HeadlessPaneLoadArgs, PaneTemplateCreateOptions } from "gloomberb/types/plugin";
+import { AdjacentPane } from "./pane";
 import { AdjacentClient } from "./client";
+import { filingKindLabel, formatFilingDay } from "./cftc";
 import { loadCatalogEntries, resolveAdjacentSeries, toCatalogItem } from "./series";
-import { API_KEY_CONFIG, CONNECTION_ID, PLUGIN_ID } from "./types";
-import { normalizeIndex, normalizeRate } from "./normalize";
+import { adjacentTab, API_KEY_CONFIG, CONNECTION_ID, PLUGIN_ID, type AdjacentTab } from "./types";
+import { matchesQuery, normalizeIndex, normalizeRate } from "./normalize";
 
 export { registerAdjacentDetailPreload } from "./detail-preload";
 
@@ -13,18 +13,81 @@ function templateInstance(_context: unknown, options?: PaneTemplateCreateOptions
   const query = (options?.arg ?? "").trim();
   return {
     placement: "floating" as const,
-    ...(query ? { params: { query }, settings: { query }, title: query } : {}),
+    ...(query
+      ? { params: { query }, settings: { defaultTabId: "indices", query }, title: query }
+      : { settings: { defaultTabId: "indices" } }),
   };
 }
 
-const indicesHeadless = {
+function argumentText(argument: HeadlessPaneLoadArgs["argument"]): string {
+  if (typeof argument === "string") return argument.trim();
+  if (Array.isArray(argument)) return argument.join(" ").trim();
+  return "";
+}
+
+const adjacentHeadless = {
   shape: "rows" as const,
-  argument: { kind: "none" as const, placeholder: "", description: "Lists Adjacent indices." },
-  options: [],
-  describe: () => "Adjacent indices",
-  async load() {
-    const key = process.env.ADJACENT_API_KEY ?? null;
-    const rows = (await new AdjacentClient(key).listIndices()).map(normalizeIndex);
+  argument: {
+    kind: "free-text" as const,
+    placeholder: "filter",
+    description: "Filters the indices, rates, or CFTC list.",
+    optional: true,
+  },
+  options: [
+    {
+      key: "tab",
+      description: "Which list to print.",
+      type: "enum" as const,
+      values: [
+        { value: "indices" },
+        { value: "rates" },
+        { value: "cftc" },
+      ],
+      defaultValue: "indices",
+    },
+  ],
+  describe: (args: HeadlessPaneLoadArgs) => `Adjacent ${adjacentTab(args.options.tab)}`,
+  async load(args) {
+    const tab: AdjacentTab = adjacentTab(args.options.tab);
+    const query = argumentText(args.argument);
+    const client = new AdjacentClient(process.env.ADJACENT_API_KEY ?? null);
+    if (tab === "rates") {
+      const rows = (await client.listRates()).map(normalizeRate).filter((row) => matchesQuery(`${row.name} ${row.id}`, query));
+      return {
+        columns: [
+          { key: "name", header: "Rate" },
+          { key: "value", header: "Value" },
+          { key: "change1d", header: "1D" },
+          { key: "spread", header: "Spread" },
+        ],
+        rows: rows.map((row) => ({
+          name: row.name,
+          value: row.value,
+          change1d: row.change1d,
+          spread: row.spread,
+        })),
+      };
+    }
+    if (tab === "cftc") {
+      const page = await client.listFilings({ search: query, perPage: 100 });
+      return {
+        columns: [
+          { key: "org", header: "Org" },
+          { key: "type", header: "Type" },
+          { key: "status", header: "Status" },
+          { key: "day", header: "Day" },
+          { key: "title", header: "Filing" },
+        ],
+        rows: page.filings.map((row) => ({
+          org: row.orgCode,
+          type: filingKindLabel(row.feed),
+          status: row.status,
+          day: formatFilingDay(row.statusDate),
+          title: row.title,
+        })),
+      };
+    }
+    const rows = (await client.listIndices()).map(normalizeIndex).filter((row) => matchesQuery(`${row.ticker} ${row.name} ${row.id}`, query));
     return {
       columns: [
         { key: "ticker", header: "Ticker" },
@@ -42,31 +105,6 @@ const indicesHeadless = {
   },
 } satisfies HeadlessPaneDefinition<"rows">;
 
-const ratesHeadless = {
-  shape: "rows" as const,
-  argument: { kind: "none" as const, placeholder: "", description: "Lists Adjacent reference rates." },
-  options: [],
-  describe: () => "Adjacent rates",
-  async load() {
-    const key = process.env.ADJACENT_API_KEY ?? null;
-    const rows = (await new AdjacentClient(key).listRates()).map(normalizeRate);
-    return {
-      columns: [
-        { key: "name", header: "Rate" },
-        { key: "value", header: "Value" },
-        { key: "change1d", header: "1D" },
-        { key: "spread", header: "Spread" },
-      ],
-      rows: rows.map((row) => ({
-        name: row.name,
-        value: row.value,
-        change1d: row.change1d,
-        spread: row.spread,
-      })),
-    };
-  },
-} satisfies HeadlessPaneDefinition<"rows">;
-
 function clientFrom(ctx: GloomPluginContext): AdjacentClient {
   const stored = ctx.configState.get<string>(API_KEY_CONFIG);
   return new AdjacentClient(
@@ -77,49 +115,30 @@ function clientFrom(ctx: GloomPluginContext): AdjacentClient {
 
 export const adjacentIndicesPlugin: GloomPlugin = {
   id: PLUGIN_ID,
-  name: "Adjacent Indices",
+  name: "Adjacent",
   version: "0.1.0",
-  description: "Adjacent prediction-market indices and reference rates.",
+  description: "Adjacent prediction-market indices, reference rates, and CFTC filings.",
   toggleable: true,
   panes: [
     {
-      id: "adjacent-indices",
-      name: "Adjacent Indices",
+      id: "adjacent",
+      name: "Adjacent",
       icon: "A",
-      component: AdjacentIndicesPane,
+      component: AdjacentPane,
       defaultPosition: "right",
       defaultMode: "floating",
       defaultFloatingSize: { width: 72, height: 30 },
-      headless: indicesHeadless,
-    },
-    {
-      id: "adjacent-rates",
-      name: "Adjacent Rates",
-      icon: "A",
-      component: AdjacentRatesPane,
-      defaultPosition: "right",
-      defaultMode: "floating",
-      defaultFloatingSize: { width: 60, height: 24 },
-      headless: ratesHeadless,
+      headless: adjacentHeadless,
     },
   ],
   paneTemplates: [
     {
-      id: "adjacent-indices-pane",
-      paneId: "adjacent-indices",
-      label: "Adjacent Indices",
-      description: "Browse Adjacent prediction-market indices (RED, BLUE, NTI, house). Chart one with G CAP:adjacent-indices:ADJ:red.",
-      keywords: ["adjacent", "indices", "prediction", "markets", "red", "blue", "nti", "house"],
-      shortcut: { prefix: "ADI", argPlaceholder: "ticker or name", argKind: "text", argOptional: true },
-      createInstance: templateInstance,
-    },
-    {
-      id: "adjacent-rates-pane",
-      paneId: "adjacent-rates",
-      label: "Adjacent Reference Rates",
-      description: "Cross-platform prediction market reference rates. Chart one with G CAP:adjacent-indices:ADJ:house.",
-      keywords: ["adjacent", "rates", "reference", "prediction", "markets"],
-      shortcut: { prefix: "ADR", argPlaceholder: "rate", argKind: "text", argOptional: true },
+      id: "adjacent-pane",
+      paneId: "adjacent",
+      label: "Adjacent",
+      description: "Indices, reference rates, and CFTC filings. Chart a series with G CAP:adjacent-indices:ADJ:red.",
+      keywords: ["adjacent", "indices", "rates", "cftc", "filings", "prediction", "markets", "red", "blue", "nti", "house"],
+      shortcut: { prefix: "ADJ", argPlaceholder: "filter", argKind: "text", argOptional: true },
       createInstance: templateInstance,
     },
   ],
@@ -158,7 +177,7 @@ export const adjacentIndicesPlugin: GloomPlugin = {
     ctx.registerCommand({
       id: "adjacent-set-api-key",
       label: "Adjacent: set API key",
-      description: "Store an Adjacent API key. Public endpoints serve indices, rates, and a short news list. Filings need a key.",
+      description: "Store an Adjacent API key. Public endpoints serve indices, rates, CFTC filings, and a short news list. Related index filings need a key.",
       keywords: ["adjacent", "api", "key"],
       category: "config",
       wizard: [
