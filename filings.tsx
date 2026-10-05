@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
-import { Box, ScrollBox, TextAttributes, type InputRenderable, type ScrollBoxRenderable } from "gloomberb/ui";
+import { Box, Text, TextAttributes, type InputRenderable, type ScrollBoxRenderable } from "gloomberb/ui";
 import {
-  ArticleContent,
   DataTableStackView,
+  DetailScrollBody,
   EmptyState,
   InputSearchBar,
+  MarkdownText,
   Spinner,
   useExternalLinkFooter,
   usePaneFooter,
@@ -93,17 +94,20 @@ function FilingDetail({
   scrollRef: RefObject<ScrollBoxRenderable | null>;
 }) {
   const lineWidth = Math.max(width - 2, 1);
+  const meta = buildDetailMeta(filing);
   return (
-    <Box flexDirection="column" flexGrow={1} flexBasis={0} minHeight={0} overflow="hidden" paddingX={1} paddingY={1}>
-      <ScrollBox ref={scrollRef} flexGrow={1} flexBasis={0} minHeight={0} scrollY focusable={false}>
-        <ArticleContent
-          width={lineWidth}
-          metadata={buildDetailMeta(filing)}
-          body={buildDetailBody(filing, detail?.markdown ?? "", loading && !detail)}
-          note={detail?.sourceUrl}
+    <DetailScrollBody ref={scrollRef} resetScrollKey={filing.id}>
+      <Box flexDirection="column" gap={1}>
+        {meta.map((line, index) => (
+          <Text key={`${index}:${line}`} fg={colors.textMuted}>{line}</Text>
+        ))}
+        <MarkdownText
+          text={buildDetailBody(filing, detail?.markdown ?? "", loading && !detail)}
+          lineWidth={lineWidth}
+          textColor={colors.text}
         />
-      </ScrollBox>
-    </Box>
+      </Box>
+    </DetailScrollBody>
   );
 }
 
@@ -270,13 +274,6 @@ export function AdjacentFilingsPane({ paneId, focused, width, height }: PaneProp
     showHint: !!detail?.sourceUrl,
   });
 
-  const scrollDetailBy = useCallback((delta: number) => {
-    const scrollBox = detailScrollRef.current;
-    if (!scrollBox?.viewport) return;
-    const maxScrollTop = Math.max(0, scrollBox.scrollHeight - scrollBox.viewport.height);
-    scrollBox.scrollTop = Math.max(0, Math.min(maxScrollTop, scrollBox.scrollTop + delta));
-  }, []);
-
   const searchBar = (
     <InputSearchBar
       value={query}
@@ -344,19 +341,7 @@ export function AdjacentFilingsPane({ paneId, focused, width, height }: PaneProp
         onChange: setSelectedId,
       }}
       onActivate={() => setDetailOpen(true)}
-      onDetailKeyDown={(event) => {
-        if (isPlainKey(event, "j", "down")) {
-          event.preventDefault?.();
-          scrollDetailBy(1);
-          return true;
-        }
-        if (isPlainKey(event, "k", "up")) {
-          event.preventDefault?.();
-          scrollDetailBy(-1);
-          return true;
-        }
-        return false;
-      }}
+      detailScrollRef={detailScrollRef}
       rootWidth={width}
       rootHeight={height}
       columns={COLUMNS}
