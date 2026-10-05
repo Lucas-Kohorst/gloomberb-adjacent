@@ -1,6 +1,6 @@
-# Adjacent Indices
+# Adjacent
 
-Prediction-market **indices** and **reference rates** from [Adjacent](https://adjacent.markets) as Gloomberb panes and chart series.
+Prediction-market **indices**, **reference rates**, and **CFTC filings** from [Adjacent](https://adjacent.markets) as one Gloomberb pane and chart series.
 
 Listed in the [Gloomberb plugin directory](https://gloom.sh/plugins) via the `gloomberb-plugin` GitHub topic.
 
@@ -10,7 +10,7 @@ Listed in the [Gloomberb plugin directory](https://gloom.sh/plugins) via the `gl
 gloomberb install Lucas-Kohorst/gloomberb-adjacent
 ```
 
-Installing from the Plugins pane (`PL`) loads it straight away; from the CLI, restart Gloomberb. Enable **Adjacent Indices** if it is not already on.
+Installing from the Plugins pane (`PL`) loads it straight away; from the CLI, restart Gloomberb. Enable **Adjacent** if it is not already on.
 
 Requires Gloomberb 0.13.3 or newer.
 
@@ -18,11 +18,10 @@ Requires Gloomberb 0.13.3 or newer.
 
 | Surface | Shortcut | What it is |
 | --- | --- | --- |
-| Adjacent Indices | `ADI` | Blended indices (RED, BLUE, NTI, House, …) |
-| Adjacent Rates | `ADR` | Cross-venue reference rates |
+| Adjacent | `ADJ` | One pane. Tabs: Indices, Rates, CFTC |
 | Chart series | `G CAP:adjacent-indices:ADJ:red` | History for any index or rate id; or search "adjacent" from a chart's **add series** |
 
-`/` filters the table. Open an index for its chart, constituents, related news, and filings. Filings need an API key. Open a rate for its chart and sources. `o` opens the selected link.
+`h` and `l` move between Indices, Rates, and CFTC. `/` filters the table. Open an index for its chart, constituents, related news, and filings. Those related filings need an API key. Open a rate for its chart and sources. Open a CFTC filing for its text. `o` opens the selected link. Public CFTC filings cover the last 90 days.
 
 ## API key (optional)
 
@@ -31,8 +30,9 @@ Public Adjacent endpoints work without a key. For the authenticated catalog, run
 ## Headless
 
 ```bash
-gloomberb fn ADI
-gloomberb fn ADR --json
+gloomberb fn ADJ
+gloomberb fn ADJ --tab rates
+gloomberb fn ADJ --tab cftc --json
 gloomberb catalog adjacent
 ```
 
