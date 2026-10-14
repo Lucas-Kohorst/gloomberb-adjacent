@@ -12,7 +12,7 @@ gloomberb install Lucas-Kohorst/gloomberb-adjacent
 
 Installing from the Plugins pane (`PL`) loads it straight away; from the CLI, restart Gloomberb. Enable **Adjacent** if it is not already on.
 
-Requires Gloomberb 0.13.3 or newer.
+Requires Gloomberb 0.16.5 or newer.
 
 ## What it adds
 
@@ -21,7 +21,7 @@ Requires Gloomberb 0.13.3 or newer.
 | Adjacent | `ADJ` | One pane. Tabs: Indices, Rates, CFTC |
 | Chart series | `G CAP:adjacent-indices:ADJ:red` | History for any index or rate id; or search "adjacent" from a chart's **add series** |
 
-`h` and `l` move between Indices, Rates, and CFTC. `/` filters the table. Open an index for its chart, constituents, related news, and filings. Those related filings need an API key. Open a rate for its chart and sources. Open a CFTC filing for its text. `o` opens the selected link. Public CFTC filings cover the last 90 days.
+`h` and `l` move between Indices, Rates, and CFTC. `/` filters the table. The selected index or rate is the chart above the list. Open an index for constituents, related news, and filings. Enter on a story reads the summary. `o` opens that story, or a filing, when it has a URL. Related filings need an API key. Open a rate for its sources. Open a CFTC filing for its text. Public CFTC filings cover the last 90 days.
 
 ## API key (optional)
 

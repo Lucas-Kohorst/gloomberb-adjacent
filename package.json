@@ -16,7 +16,7 @@
     "prediction-markets"
   ],
   "peerDependencies": {
-    "gloomberb": ">=0.13.3",
+    "gloomberb": ">=0.16.5",
     "react": "*"
   },
   "peerDependenciesMeta": {

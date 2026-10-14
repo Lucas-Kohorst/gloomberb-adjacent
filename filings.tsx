@@ -3,19 +3,18 @@ import { Box, Text, TextAttributes, type InputRenderable, type ScrollBoxRenderab
 import {
   DataTableStackView,
   DetailScrollBody,
-  EmptyState,
   InputSearchBar,
   MarkdownText,
-  Spinner,
+  PaneStatusBody,
   useExternalLinkFooter,
-  usePaneFooter,
+  usePaneStatusFooter,
   useTableLoadMore,
   type DataTableCell,
   type DataTableColumn,
 } from "gloomberb/components";
 import { colors } from "gloomberb/theme";
 import { isPlainKey } from "gloomberb/utils";
-import { useAutoRefresh, usePaneSettingValue, usePluginConfigState, useShortcut } from "gloomberb/react";
+import { useAutoRefresh, usePaneSettingValue, usePluginConfigState, useShortcut, useUpdatedAgo } from "gloomberb/react";
 import type { PaneProps } from "gloomberb/types/plugin";
 import {
   buildDetailBody,
@@ -26,7 +25,7 @@ import {
   filingSortTime,
   formatFilingDay,
 } from "./cftc";
-import { errorSegment, searchHint, useAdjacentClient } from "./shared";
+import { useAdjacentClient } from "./shared";
 import { API_KEY_CONFIG, type CftcFiling, type CftcFilingDetail } from "./types";
 
 type Status = "idle" | "loading" | "loaded" | "error";
@@ -96,18 +95,25 @@ function FilingDetail({
   const lineWidth = Math.max(width - 2, 1);
   const meta = buildDetailMeta(filing);
   return (
-    <DetailScrollBody ref={scrollRef} resetScrollKey={filing.id}>
-      <Box flexDirection="column" gap={1}>
-        {meta.map((line, index) => (
-          <Text key={`${index}:${line}`} fg={colors.textMuted}>{line}</Text>
-        ))}
-        <MarkdownText
-          text={buildDetailBody(filing, detail?.markdown ?? "", loading && !detail)}
-          lineWidth={lineWidth}
-          textColor={colors.text}
-        />
-      </Box>
-    </DetailScrollBody>
+    <PaneStatusBody
+      loading={loading && !detail}
+      error={null}
+      subject="filing"
+      width={width}
+    >
+      <DetailScrollBody ref={scrollRef} resetScrollKey={filing.id}>
+        <Box flexDirection="column" gap={1}>
+          {meta.map((line, index) => (
+            <Text key={`${index}:${line}`} fg={colors.textMuted}>{line}</Text>
+          ))}
+          <MarkdownText
+            text={buildDetailBody(filing, detail?.markdown ?? "", false)}
+            lineWidth={lineWidth}
+            textColor={colors.text}
+          />
+        </Box>
+      </DetailScrollBody>
+    </PaneStatusBody>
   );
 }
 
@@ -253,19 +259,14 @@ export function AdjacentFilingsPane({ paneId, focused, width, height }: PaneProp
     }
   }, { enabled: focused && !searchFocused && !detailOpen });
 
-  const errorInfo = errorSegment(error);
-  usePaneFooter(paneId, () => ({
-    info: [
-      ...(status === "loading" || loadingMore
-        ? [{ id: "loading", parts: [{ text: loadingMore ? "loading more" : "loading", tone: "muted" as const }] }]
-        : []),
-      ...(client.isPublic
-        ? [{ id: "tier", parts: [{ text: "public, last 90d", tone: "muted" as const }] }]
-        : []),
-      ...(errorInfo ? [errorInfo] : []),
-    ],
-    hints: [searchHint(() => { setSearchFocused(true); setSearchToken((token) => token + 1); })],
-  }), [client.isPublic, errorInfo, loadingMore, status]);
+  const updatedAgo = useUpdatedAgo(updatedAt);
+  usePaneStatusFooter({
+    registrationId: `${paneId}:status`,
+    enabled: focused,
+    loading: (status === "loading" && rows.length === 0) || loadingMore,
+    error: rows.length === 0 ? error : null,
+    info: updatedAgo ? [{ id: "updated", parts: [{ text: updatedAgo, tone: "muted" as const }] }] : [],
+  });
 
   useExternalLinkFooter({
     registrationId: `${paneId}:filing`,
@@ -295,24 +296,17 @@ export function AdjacentFilingsPane({ paneId, focused, width, height }: PaneProp
     />
   );
 
-  if (status === "loading" && rows.length === 0) {
+  if ((status === "loading" || status === "error") && rows.length === 0) {
     return (
       <Box width={width} height={height} flexDirection="column">
         {searchBar}
-        <Box flexGrow={1} justifyContent="center" alignItems="center">
-          <Spinner label={query.trim() ? `Searching CFTC filings for ${query.trim()}...` : "Loading CFTC filings..."} />
-        </Box>
-      </Box>
-    );
-  }
-
-  if (status === "error" && rows.length === 0) {
-    return (
-      <Box width={width} height={height} flexDirection="column">
-        {searchBar}
-        <Box flexGrow={1} justifyContent="center" alignItems="center" padding={1}>
-          <EmptyState title="CFTC filings unavailable." message={error ?? undefined} />
-        </Box>
+        <PaneStatusBody
+          loading={status === "loading"}
+          error={status === "error" ? error : null}
+          subject="CFTC filings"
+          width={width}
+          height={Math.max(3, height - 1)}
+        />
       </Box>
     );
   }

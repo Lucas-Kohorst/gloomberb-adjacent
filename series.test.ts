@@ -18,7 +18,25 @@ describe("resolveAdjacentSeries", () => {
     const series = await resolveAdjacentSeries(client, "ADJ:hou_nti");
     expect(series.axis).toBe("right");
     expect(series.style).toBe("line");
-    expect(series.points.map((point) => point.value)).toEqual([100, 90]);
+    expect(series.points.map((point: { value: number | null }) => point.value)).toEqual([100, 90]);
     expect(series.color).toBe(priceColor(-10));
+    expect(series.unit).toBe("index");
+  });
+
+  test("a rate id is not labeled an index when the index route is empty", async () => {
+    const client = {
+      async getIndexPrices() {
+        return [];
+      },
+      async getRatePrices() {
+        return [
+          { timestamp: "2026-07-05T00:00:00Z", price: 40 },
+          { timestamp: "2026-10-02T00:00:00Z", price: 42 },
+        ];
+      },
+    };
+    const series = await resolveAdjacentSeries(client, "ADJ:house");
+    expect(series.unit).toBe("percent");
+    expect(series.points.map((point: { value: number | null }) => point.value)).toEqual([40, 42]);
   });
 });
