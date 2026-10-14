@@ -126,7 +126,7 @@ export function unwrapNews(raw: unknown): AdjacentNewsArticle[] {
       id,
       title,
       url,
-      source: stringField(item, "source") ?? "Adjacent",
+      source: stringField(item, "source") ?? "",
       summary: stringField(item, "summary", "via_market_question"),
       publishedAt: stringField(item, "published_at", "published_date") ?? "",
     });

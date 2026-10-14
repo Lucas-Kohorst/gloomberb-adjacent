@@ -1,4 +1,5 @@
-import type { ChartSeriesCatalogItem, ResolvedSeries } from "gloomberb/capabilities";
+import type { ChartSeriesCatalogItem } from "gloomberb/capabilities";
+import type { ResolvedSeries } from "gloomberb/time-series";
 import { priceColor } from "gloomberb/theme";
 import type { AdjacentClient } from "./client";
 import { normalizeIndex, normalizeRate, samplesToPoints } from "./normalize";
@@ -12,8 +13,8 @@ export function catalogEntry(kind: "index" | "rate", id: string, label: string, 
   return {
     seriesId: `ADJ:${id}`,
     label,
-    description: kind === "index" ? "Adjacent prediction-market index" : "Adjacent reference rate",
-    detail: "Adjacent",
+    description: kind === "index" ? "Prediction-market index" : "Reference rate",
+    detail: kind,
     searchText: [id, label, extra, "adjacent", kind].join(" "),
   };
 }
@@ -46,12 +47,12 @@ export async function resolveAdjacentSeries(
   seriesId: string,
 ): Promise<ResolvedSeries> {
   const id = seriesId.replace(/^ADJ:/i, "").trim();
-  let points = samplesToPoints(await client.getIndexPrices(id).catch(() => []));
-  let kind: "index" | "rate" = "index";
-  if (points.length === 0) {
-    points = samplesToPoints(await client.getRatePrices(id).catch(() => []));
-    kind = "rate";
-  }
+  const [indexPoints, ratePoints] = await Promise.all([
+    client.getIndexPrices(id).then(samplesToPoints).catch(() => []),
+    client.getRatePrices(id).then(samplesToPoints).catch(() => []),
+  ]);
+  const kind: "index" | "rate" = indexPoints.length > 0 ? "index" : "rate";
+  const points = kind === "index" ? indexPoints : ratePoints;
   const first = points[0]?.value ?? 0;
   const last = points[points.length - 1]?.value ?? first;
   return {

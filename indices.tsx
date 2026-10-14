@@ -1,26 +1,27 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Box, TextAttributes, type InputRenderable } from "gloomberb/ui";
+import { TextAttributes } from "gloomberb/ui";
 import {
+  ChartTableHeader,
   DataTableStackView,
-  EmptyState,
-  InputSearchBar,
-  Spinner,
-  useExternalLinkFooter,
-  usePaneFooter,
+  PaneStatusBody,
+  QueryBar,
+  staticSeries,
+  usePaneStatusLinkFooter,
+  useQueryBarSearch,
   type DataTableCell,
   type DataTableColumn,
+  type StatItem,
 } from "gloomberb/components";
 import { colors, priceColor } from "gloomberb/theme";
 import { formatPercentRaw, isPlainKey } from "gloomberb/utils";
-import { useAutoRefresh, usePaneSettingValue, usePluginConfigState, useShortcut } from "gloomberb/react";
+import { useAutoRefresh, usePaneSettingValue, usePluginConfigState, useShortcut, useUpdatedAgo } from "gloomberb/react";
 import type { PaneProps } from "gloomberb/types/plugin";
+import { historyFromPoints, listedBoard, type History } from "./board";
 import { IndexDetail } from "./detail";
 import { prefetchAdjacentIndexDetail } from "./detail-preload";
-import { matchesQuery, normalizeIndex } from "./normalize";
-import { errorSegment, nextSortState, searchHint, useAdjacentClient } from "./shared";
-import { API_KEY_CONFIG, type AdjacentIndexRow } from "./types";
-
-type Status = "idle" | "loading" | "loaded" | "error";
+import { matchesQuery, normalizeIndex, samplesToPoints } from "./normalize";
+import { nextSortState, useAdjacentClient } from "./shared";
+import { API_KEY_CONFIG, type AdjacentIndexRow, type PricePoint } from "./types";
 
 const COLUMNS: DataTableColumn[] = [
   { id: "ticker", label: "TICKER", width: 8, align: "left" },
@@ -59,42 +60,41 @@ export function AdjacentIndicesPane({ paneId, focused, width, height }: PaneProp
   const [apiKey] = usePluginConfigState<string>(API_KEY_CONFIG, "");
   const client = useAdjacentClient(apiKey);
   const [openedQuery] = usePaneSettingValue("query", "");
-  const seed = openedQuery.trim();
-  const [query, setQuery] = useState(seed);
-  const [searchFocused, setSearchFocused] = useState(false);
-  const [status, setStatus] = useState<Status>("idle");
-  const [error, setError] = useState<string | null>(null);
-  const [rows, setRows] = useState<AdjacentIndexRow[]>([]);
+  const [query, setQuery] = useState(openedQuery.trim());
+  const search = useQueryBarSearch();
+  const [catalog, setCatalog] = useState<AdjacentIndexRow[]>([]);
+  const [catalogError, setCatalogError] = useState<string | null>(null);
+  const [catalogLoading, setCatalogLoading] = useState(true);
+  const [updatedAt, setUpdatedAt] = useState<number | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [detailOpen, setDetailOpen] = useState(false);
+  const [openId, setOpenId] = useState<string | null>(null);
   const [sortColumnId, setSortColumnId] = useState<SortColumn>("chg1d");
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc");
-  const [detailUrl, setDetailUrl] = useState<string | null>(null);
-  const [searchToken, setSearchToken] = useState(0);
+  const [storyUrl, setStoryUrl] = useState<string | null>(null);
   const reloadDetail = useRef<() => void>(() => {});
-  const [updatedAt, setUpdatedAt] = useState<number | null>(null);
-  const searchInputRef = useRef<InputRenderable | null>(null);
+  const [history, setHistory] = useState<History>({ status: "pending", closes: [] });
+  const updatedAgo = useUpdatedAgo(updatedAt);
 
-  const load = useCallback(async () => {
-    setStatus("loading");
-    setError(null);
+  const loadCatalog = useCallback(async () => {
+    setCatalogLoading(true);
+    setCatalogError(null);
     try {
       const next = (await client.listIndices()).map(normalizeIndex);
-      setRows(next);
-      setStatus("loaded");
+      setCatalog(next);
       setUpdatedAt(Date.now());
       setSelectedId((current) => current ?? next[0]?.id ?? null);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Adjacent indices unavailable.");
-      setStatus("error");
+      setCatalogError(cause instanceof Error ? cause.message : "Indices unavailable.");
+    } finally {
+      setCatalogLoading(false);
     }
   }, [client]);
 
-  useEffect(() => { void load(); }, [load]);
-  useAutoRefresh(updatedAt, () => { void load(); });
+  useEffect(() => { void loadCatalog(); }, [loadCatalog]);
+  useAutoRefresh(updatedAt, () => { void loadCatalog(); });
 
   const visible = useMemo(() => {
-    const filtered = rows.filter((row) => matchesQuery(`${row.ticker} ${row.name} ${row.id}`, query));
+    const filtered = catalog.filter((row) => matchesQuery(`${row.ticker} ${row.name} ${row.id}`, query));
     const dir = sortDirection === "asc" ? 1 : -1;
     return [...filtered].sort((left, right) => {
       const key = sortColumnId;
@@ -105,138 +105,170 @@ export function AdjacentIndicesPane({ paneId, focused, width, height }: PaneProp
       if (rv == null) return -1;
       return lv < rv ? -dir : lv > rv ? dir : 0;
     });
-  }, [query, rows, sortColumnId, sortDirection]);
+  }, [catalog, query, sortColumnId, sortDirection]);
 
   const selected = visible.find((row) => row.id === selectedId) ?? visible[0] ?? null;
 
   useEffect(() => {
-    if (!selected) return;
-    const id = selected.id;
-    const timer = setTimeout(() => prefetchAdjacentIndexDetail(client, id), 80);
-    return () => clearTimeout(timer);
+    if (!selected) {
+      setHistory({ status: "short", closes: [] });
+      return;
+    }
+    let cancelled = false;
+    setHistory((current) => ({ status: "pending", closes: current.closes }));
+    void client.getIndexPrices(selected.id).then(samplesToPoints).then((points) => {
+      if (!cancelled) setHistory(historyFromPoints(points, "settled"));
+    }).catch(() => {
+      if (cancelled) return;
+      setHistory((current) => historyFromPoints(current.closes as PricePoint[], "failed"));
+    });
+    const timer = setTimeout(() => prefetchAdjacentIndexDetail(client, selected.id), 80);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
   }, [client, selected]);
 
   useShortcut((event) => {
-    if (!focused || searchFocused) return;
-    if (isPlainKey(event, "/") || isPlainKey(event, "s")) {
-      event.preventDefault?.();
-      setSearchFocused(true);
-      setSearchToken((token) => token + 1);
-    }
-  }, { enabled: focused && !searchFocused });
+    if (!focused || search.active || openId) return;
+    if (!isPlainKey(event, "r")) return;
+    event.preventDefault?.();
+    void loadCatalog();
+  }, { enabled: focused && !search.active && !openId });
 
-  const errorInfo = errorSegment(error);
-  usePaneFooter(paneId, () => ({
-    info: [
-      ...(status === "loading" ? [{ id: "loading", parts: [{ text: "loading", tone: "muted" as const }] }] : []),
-      ...(errorInfo ? [errorInfo] : []),
-    ],
-    hints: [searchHint(() => { setSearchFocused(true); setSearchToken((token) => token + 1); })],
-  }), [errorInfo, status]);
+  const board = listedBoard("index", visible, {
+    selectedId: selected?.id ?? null,
+    openId,
+    sort: { column: sortColumnId, direction: sortDirection },
+    query,
+  }, history, storyUrl ? { url: storyUrl } : null);
 
-  const onDetailLink = useCallback((url: string | null) => {
-    setDetailUrl(url);
-  }, []);
+  const series = useMemo(() => {
+    if (board.band.closes.length < 3) return [];
+    const first = board.band.closes[0]?.value ?? 0;
+    const last = board.band.closes[board.band.closes.length - 1]?.value ?? first;
+    return [staticSeries(board.band.closes.map((close) => ({
+      date: close.date,
+      observedAt: close.date,
+      value: close.value,
+    })), {
+      id: selected?.id ?? "index",
+      label: board.band.seriesLabel,
+      color: priceColor(last - first),
+    })];
+  }, [board.band.closes, board.band.seriesLabel, selected?.id]);
 
-  useExternalLinkFooter({
+  const figures: StatItem[] = board.figures.map((figure) => ({
+    id: figure.id,
+    label: figure.label,
+    value: figure.value,
+    tone: figure.id === "1d" || figure.id === "7d" ? undefined : "muted",
+  }));
+
+  usePaneStatusLinkFooter({
     registrationId: `${paneId}:open`,
     focused,
-    url: detailOpen && detailUrl ? detailUrl : selected ? "https://adjacent.markets" : null,
-    showHint: !!selected,
+    loading: catalogLoading && catalog.length === 0,
+    error: catalog.length === 0 ? catalogError : null,
+    url: board.openTarget?.url ?? null,
+    showOpenHint: !!board.openTarget,
+    info: updatedAgo ? [{ id: "updated", parts: [{ text: updatedAgo, tone: "muted" as const }] }] : [],
   });
 
-  if (status === "loading" && rows.length === 0) {
-    return (
-      <Box width={width} height={height} justifyContent="center" alignItems="center">
-        <Spinner label="Loading Adjacent indices..." />
-      </Box>
-    );
-  }
-
-  if (status === "error" && rows.length === 0) {
-    return (
-      <Box width={width} height={height} padding={1}>
-        <EmptyState title="Adjacent indices unavailable." message={error ?? undefined} />
-      </Box>
-    );
-  }
-
-  const detail = selected && detailOpen ? (
+  const detail = selected && openId ? (
     <IndexDetail
       client={client}
       row={selected}
       width={Math.max(20, width - 2)}
       height={Math.max(8, height - 2)}
-      focused={focused && !searchFocused}
-      onLink={onDetailLink}
+      focused={focused && !search.active}
+      onLink={setStoryUrl}
       reloadRef={reloadDetail}
     />
   ) : null;
 
   return (
-    <DataTableStackView<AdjacentIndexRow, DataTableColumn>
-      focused={focused && !searchFocused}
-      detailOpen={detailOpen && !!selected}
-      onBack={() => {
-        setDetailOpen(false);
-        setDetailUrl(null);
-      }}
-      detailContent={detail}
-      detailTitle={selected ? `${selected.ticker}  ${selected.name}` : undefined}
-      selection={{
-        kind: "id",
-        selectedId: selected?.id ?? null,
-        getId: (row) => row.id,
-        onChange: setSelectedId,
-      }}
-      onActivate={() => setDetailOpen(true)}
-      onDetailKeyDown={(event) => {
-        if (!isPlainKey(event, "r")) return false;
-        event.preventDefault?.();
-        reloadDetail.current();
-        return true;
-      }}
-      rootWidth={width}
-      rootHeight={height}
-      columns={COLUMNS}
-      items={visible}
-      rootBefore={(
-        <InputSearchBar
-          value={query}
-          focused={focused}
-          active={searchFocused}
-          width={width}
-          focusToken={searchToken}
-          inputRef={searchInputRef}
-          placeholder="ticker or name"
-          debounceMs={80}
-          onFocus={() => setSearchFocused(true)}
-          onBlur={() => setSearchFocused(false)}
-          onNavigateDown={() => setSearchFocused(false)}
-          onQueryChange={setQuery}
-        />
-      )}
-      sortColumnId={sortColumnId}
-      sortDirection={sortDirection}
-      onHeaderClick={(columnId) => {
-        const next = nextSortState(
-          { columnId: sortColumnId, direction: sortDirection },
-          columnId as SortColumn,
-          columnId === "ticker" || columnId === "name" ? "asc" : "desc",
-        );
-        setSortColumnId(next.columnId);
-        setSortDirection(next.direction);
-      }}
-      getItemKey={(row) => row.id}
-      renderCell={renderCell}
-      emptyStateTitle="No indices."
-      onRootKeyDown={(event) => {
-        if (isPlainKey(event, "r")) {
-          void load();
+    <PaneStatusBody
+      width={width}
+      height={height}
+      loading={catalogLoading && catalog.length === 0}
+      error={catalog.length === 0 ? catalogError : null}
+      subject="indices"
+      empty={!catalogLoading && !catalogError && catalog.length === 0}
+      emptyTitle="No indices."
+    >
+      <DataTableStackView<AdjacentIndexRow, DataTableColumn>
+        focused={focused && !search.active}
+        detailOpen={!!openId && !!selected}
+        onBack={() => {
+          setOpenId(null);
+          setStoryUrl(null);
+        }}
+        detailContent={detail}
+        detailTitle={selected ? `${selected.ticker}  ${selected.name}` : undefined}
+        selection={{
+          kind: "id",
+          selectedId: selected?.id ?? null,
+          getId: (row) => row.id,
+          onChange: setSelectedId,
+        }}
+        onActivate={() => {
+          if (selected) setOpenId(selected.id);
+        }}
+        onDetailKeyDown={(event) => {
+          if (!isPlainKey(event, "r")) return false;
+          event.preventDefault?.();
+          reloadDetail.current();
           return true;
-        }
-        return false;
-      }}
-    />
+        }}
+        rootWidth={width}
+        rootHeight={height}
+        columns={COLUMNS}
+        items={visible}
+        rootBefore={(
+          <ChartTableHeader
+            width={width}
+            height={height}
+            tableRows={visible.length}
+            tableColumns={COLUMNS}
+            query={(
+              <QueryBar
+                width={width}
+                search={{
+                  ...search.searchProps,
+                  value: query,
+                  onChange: setQuery,
+                  placeholder: "ticker or name",
+                  focused,
+                }}
+              />
+            )}
+            figures={figures}
+            chart={{
+              series,
+              formatValue: board.band.formatValue,
+              formatAxisValue: board.band.formatAxisValue,
+              loading: board.band.loading,
+              empty: board.band.empty,
+              remoteKind: "adjacent-index",
+            }}
+          />
+        )}
+        sortColumnId={sortColumnId}
+        sortDirection={sortDirection}
+        onHeaderClick={(columnId) => {
+          const next = nextSortState(
+            { columnId: sortColumnId, direction: sortDirection },
+            columnId as SortColumn,
+            columnId === "ticker" || columnId === "name" ? "asc" : "desc",
+          );
+          setSortColumnId(next.columnId);
+          setSortDirection(next.direction);
+        }}
+        getItemKey={(row) => row.id}
+        renderCell={renderCell}
+        emptyStateTitle={query ? "No indices match." : "No indices."}
+      />
+    </PaneStatusBody>
   );
 }
